@@ -1,624 +1,832 @@
-/**
- * implement a container like std::map
- */
-#ifndef SJTU_MAP_HPP
-#define SJTU_MAP_HPP
+#ifndef SJTU_DEQUE_HPP
+#define SJTU_DEQUE_HPP
  
- // only for std::less<T>
-#include <functional>
-#include <cstddef>
-#include "utility.hpp"
 #include "exceptions.hpp"
+ 
+#include <cstddef>
+ 
+using namespace std;
  
 namespace sjtu {
  
-	template<
-		class Key,
-		class T,
-		class Compare = std::less<Key>
-	> class map {
-	public:
-		/**
-		 * the internal type of data.
-		 * it should have a default constructor, a copy constructor.
-		 * You can use sjtu::map as value_type by typedef.
-		 */
-		typedef pair<const Key, T> value_type;
+	template<class T>
+	class deque {
+	private:
+		class node {
+		public:
+			T *data;
+			node *next, *prev;
  
-		enum colourT { RED, BLACK };
-		struct Node {
-			value_type *data;
-			colourT colour;
-			Node *father, *left, *right;	// keep a tree
+			node() {
+				data = NULL; next = NULL; prev = NULL;
+			}
+			node(const T &_data, node * _prev = nullptr, node *_next = nullptr) {
+				data = new T(_data);
+				next = _next;
+				prev = _prev;
+			}
+			node(node *_prev, node *_next) {
+				data = nullptr;
+				next = _next;
+				prev = _prev;
+			}
+			~node() { delete data; }
+		};
+		class Node {
+		public:
+			size_t size, nodeSize;
+			node *head, *tail;
+			Node *prev, *next;
  
-			Node *prev, *next;				// keep a List for iterator
+			Node(const Node &other, Node *_prev, Node *_next) {
+				size = other.size;
+				nodeSize = other.nodeSize;
+				head = new node();
+				node *p = head, *q = other.head->next;
+				while (q != other.tail) {
+					p->next = new node(*(q->data), p, NULL);
+					q = q->next;
+					p = p->next;
+				}
+				tail = new node(p, NULL);
+				p->next = tail;
+				prev = _prev; next = _next;
+			}
  
-			Node() { data = NULL; colour = RED; father = left = right = NULL; prev = next = NULL; }
-			Node(const value_type &_data, Node *_father, Node *_left, Node *_right, colourT _colour = RED) {
-				data = new value_type(_data);
-				father = _father;
-				left = _left;
-				right = _right;
-				colour = _colour;
+			Node(Node *_prev = nullptr, Node *_next = nullptr) {
+				nodeSize = 300;
+				size = 0;  head = new node(); tail = new node(head, NULL); head->next = tail;
+				prev = _prev; next = _next;
+			}
+			Node(node *_head, node *_tail, size_t s, Node *pre, Node *ne) {
+				nodeSize = 300;	
+				head = _head;	
+				tail = _tail;
+				size = s;
+				prev = pre;
+				next = ne;
 			}
 			~Node() {
-				if (data) delete data;
+				node *p = head->next, *q;
+				while (p != NULL) {
+					q = p->next;
+					delete p;
+					p = q;
+				}
+				delete head;
+			}
+ 
+			void getPos(size_t pos, node *&p) {
+				if (pos < size / 2) {
+					p = head->next;
+					while (pos > 0) {
+						pos--;
+						p = p->next;
+					}
+				}
+				else {
+					pos = size - pos;
+					p = tail;
+					while (pos > 0) {
+						pos--;
+						p = p->prev;
+					}
+				}
+			}
+ 
+			void insert(size_t pos, const T &value) {
+				/*if (pos < size / 2) {
+					node *p;
+					getPos(pos, p);
+ 
+					node *q = p->next;
+					p->next = new node(value, p, q);
+					q->prev = p->next;
+ 
+					++size;
+				}
+				else {*/
+					node *p;
+					getPos(pos, p);
+ 
+					node *q = p->prev;
+					p->prev = new node(value, q, p);
+					q->next = p->prev;
+					++size;
+				//}
+			}
+ 
+			void push_back(const T &value) {
+				++size;
+				node *q = tail->prev;
+				q->next = new node(value, q, tail);
+				tail->prev = q->next;
+ 
+				if (size > nodeSize) {
+					split(size - 1);
+					next->merge();
+				}
+			}
+			void push_front(const T &value) {
+				node *p = head->next;
+				head->next = new node(value, head, p);
+				p->prev = head->next;
+				//insert(0, value);
+				++size;
+				if (size > nodeSize) {
+					split(1);
+					size = 1;
+					prev->merge();
+					return;
+				}
+			}
+ 
+			void erase(size_t pos) {
+				node *p;
+				getPos(pos, p);
+				--size;
+				p->prev->next = p->next;
+				p->next->prev = p->prev;
+				delete p;
+			}
+ 
+			void pop_front() {
+				erase(0);
+			}
+ 
+			void pop_back() {
+				erase(size - 1);
+			}
+ 
+			void split(size_t pos) {
+				node *p;
+				getPos(pos, p);
+				node *q = p->prev;
+				node *head2, *tail2;
+ 
+				tail2 = new node(q, NULL);
+				q->next = tail2;
+ 
+				head2 = new node();
+				head2->prev = NULL;
+				head2->next = p;
+ 
+				p->prev = head2;
+ 
+				next = new Node(head2, tail, size - pos, this, next);
+				next->next->prev = next;
+ 
+ 
+				tail = tail2;
+				size = pos;
+			}
+ 
+			bool mergeable() {
+				return !(this == NULL || size + next->getsize() > nodeSize || next->next == NULL);
+			}
+ 
+			void merge() {
+				if (this == NULL || size + next->getsize() > nodeSize || next->next == NULL) return;
+ 
+				if (next->getsize() == 0) {
+					Node *rNode = next;
+					next = rNode->next;
+					rNode->next->prev = this;
+					delete rNode;
+					return;
+				}
+ 
+				Node *rNode = next;
+				node *llast = tail->prev, *rfirst = rNode->head->next, *rlast = rNode->tail->prev;
+				size += next->getsize();
+ 
+				llast->next = rfirst;
+				rfirst->prev = llast;
+ 
+				rNode->head->next = rNode->tail;
+				rNode->tail->prev = rNode->head;
+				next = rNode->next;
+				rNode->next->prev = this;
+				delete rNode;
+ 
+				tail->prev = rlast;
+				rlast->next = tail;
+ 
+			}
+ 
+			T &get(size_t pos) {
+				node *p;
+				getPos(pos, p);
+ 
+				return *p->data;
+			}
+ 
+			T &operator[](const size_t &pos) {
+				return get(pos);
+			}
+ 
+			size_t getsize() {
+				return size;
 			}
 		};
- 
-		Node *root, *nil;
-		Compare comparator;
-		size_t curSize;
- 
-		class const_iterator;
-		class iterator {
-		private:
-			friend const_iterator;
-			friend map;
-		private:
-			Node *itr, *root, *nil;
+		class block {
+		public:
+			size_t nodeSize, len;
+			Node *head, *tail;
  
 		public:
-			iterator() {
-				root = nil = itr = NULL;
+			block() {
+				len = 0;
+				nodeSize = 300;
+				head = new Node();
+				head->next = new Node(head, NULL);
+				tail = new Node(head->next, NULL);
+				head->next->next = tail;
+				head->size = tail->size = nodeSize;
+			}
+			block(const block &other) {
+				len = other.len;
+				nodeSize = other.nodeSize;
+				head = new Node(*other.head, NULL, NULL);
+				Node *p = head, *q = other.head->next;
+				while (q != other.tail) {
+					p->next = new Node(*q, p, NULL);
+					p = p->next;
+					q = q->next;
+				}
+				tail = new Node(p, NULL); tail->size = nodeSize;
+				p->next = tail;
+			}
+			~block() {
+				clear();
+				delete head->next;
+				delete head;
+				delete tail;
+			}
+ 
+			size_t size() { return len; }
+			void clear() {
+				Node *p = head->next, *q;
+				while (p != tail && p != NULL) {
+					q = p->next;
+					delete p;
+					p = q;
+				}
+				head->next = new Node(head, tail);
+				tail->prev = head->next;
+				len = 0;
+			}
+			void push_back(const T &value) {
+				tail->prev->push_back(value);
+				++len;
+			}
+			void pop_back() {
+				tail->prev->pop_back();
+				--len;
+			}
+			void push_front(const T &value) {
+				head->next->push_front(value);
+				++len;
+			}
+			void pop_front() {
+				head->next->pop_front();
+				--len;
+			}
+			bool empty() {
+				return len == 0;
+ 
+			}
+ 
+			void findPos(size_t start, Node *&p, size_t &pos) {
+				if (start == 0) {
+					pos = 0;
+					p = head->next;
+					return;
+				}
+				size_t hcount = 0;
+ 
+				p = head->next;
+				while (hcount < start) {
+					if (p == tail) throw(invalid_iterator());
+					if (hcount + p->size < start) {
+						hcount += p->size;
+						p = p->next;
+					}
+					else {
+						if (hcount + p->size == start) {
+							pos = start - hcount - p->size;
+							p = p->next;
+							if (p == tail) throw(invalid_iterator());
+							return;
+						}
+						pos = start - hcount;
+						return;
+					}
+				}
+			}
+ 
+			T &get(size_t pos) {
+				Node *p;
+				size_t t;
+				findPos(pos, p, t);
+				return (*p)[t];
+			}
+ 
+			void traverse() {
+				Node *p = head->next;
+				while (p != tail) {
+					for (size_t i = 0; i < p->getsize(); ++i)
+					//	cout << (*p)[i] << ' ';
+					p = p->next;
+				}
+			//	cout << endl;
+			}
+ 
+		};
+ 
+		block *blk;
+ 
+	public:
+		class const_iterator;
+		class iterator {
+			friend class deque;
+		private:
+			Node *itr;
+			size_t pos;
+			block *me;
+ 
+		public:
+			iterator() { itr = NULL; }
+			iterator(Node *_itr, size_t _pos, block *_me) {
+				itr = _itr;
+				pos = _pos;				
+				me = _me;
+			}
+			iterator &operator=(const iterator &other) {
+				itr = other.itr;
+				pos = other.pos;
+				me = other.me;
+				return *this;
 			}
 			iterator(const iterator &other) {
 				itr = other.itr;
-				root = other.root;
-				nil = other.nil;
+				pos = other.pos;
+				me = other.me;
 			}
-			iterator(Node *t, Node *_root, Node *_nil) {
-				itr = t;
-				root = _root;
-				nil = _nil;
+ 
+			/**
+			 * return a new iterator which pointer n-next elements
+			 *   even if there are not enough elements, the behaviour is **undefined**.
+			 * as well as operator-
+			 */
+			iterator operator+(const int &n) const {
+				iterator temp(*this);
+				if (n < 0) {
+					temp = temp - (-n);
+					return temp;
+				}
+				if (n == 0) return temp;
+				++temp;
+				size_t count = 0;
+				while (count < n && temp.itr != NULL) {
+					if (count + temp.itr->size - temp.pos >= n) {
+						temp.pos += n - count - 1;
+						return temp;
+					}
+					else {
+						count += temp.itr->size - temp.pos;
+						temp.itr = temp.itr->next;
+						temp.pos = 0;
+					}
+				}
 			}
-			iterator operator=(const iterator &other) {
-				itr = other.itr;
-				root = other.root;
-				nil = other.nil;
+ 
+			iterator operator-(const int &n) const {
+				iterator temp(*this);
+				if (n < 0) {
+					temp = temp + (-n);
+					return temp;
+				}
+				if (n == 0) return temp;
+				--temp;
+				size_t count = 0;
+				while (count < n && temp.itr != NULL) {
+					if (count + temp.pos + 1 >= n) {
+						temp.pos -= (n - count) - 1;
+						return temp;
+					}
+					else {
+						count += temp.pos + 1;
+						temp.itr = temp.itr->prev;
+						temp.pos = temp.itr->size - 1;
+					}
+				}
+				return temp;
+			}
+			// return th distance between two iterator,
+			// if these two iterators points to different vectors, throw invaild_iterator.
+ 
+			size_t getpos() {
+				Node *p = itr;
+				size_t t = pos;
+				size_t count = t;
+				while (p->prev != NULL) {
+					count += p->size;
+					p = p->prev;
+				}
+				return count;
+			}
+ 
+			int operator-(const iterator &rhs) const {
+				if (me != rhs.me) throw(invalid_iterator());
+ 
+				Node *p = itr;
+				size_t t = pos;
+				size_t count1 = t;
+				if (p->prev != NULL) p = p->prev;
+				while (p->prev != NULL) {
+					count1 += p->size;
+					p = p->prev;
+				}
+ 
+				p = rhs.itr;
+				t = rhs.pos;
+				size_t count2 = t;
+				if (p->prev != NULL) p = p->prev;
+				while (p->prev != NULL) {
+					count2 += p->size;
+					p = p->prev;
+				}
+				return count1 - count2;
+			}
+			iterator operator+=(const int &n) {
+				*this = (*this) + n;
 				return *this;
 			}
+			iterator operator-=(const int &n) {
+				*this = (*this) - n;
+				return *this;
+			}
+			/**
+			 * TODO iter++
+			 */
 			iterator operator++(int) {
 				iterator temp(*this);
-				++(*this);
+				if (pos == itr->getsize() - 1) {
+					pos = 0;
+					itr = itr->next;
+				}
+				else pos++;
 				return temp;
 			}
-			iterator & operator++() {
-				if (itr == nil) throw(index_out_of_bound());
-				itr = itr->next;
+			/**
+			 * TODO ++iter
+			 */
+			iterator& operator++() {
+				if (pos == itr->getsize() - 1) {
+					pos = 0;
+					itr = itr->next;
+				}
+				else pos++;
 				return *this;
 			}
+			/**
+			 * TODO iter--
+			 */
 			iterator operator--(int) {
 				iterator temp(*this);
-				--(*this);
-				return temp;
-			}
-			iterator & operator--() {
-				if (itr == nil) {
-					itr = root;
-					if (itr == NULL) throw(index_out_of_bound());
-					while (itr->right != nil) itr = itr->right;
+				if (pos == 0) {
+					itr = itr->prev;
+					pos = itr->getsize() - 1;
 				}
-				else itr = itr->prev;
-				if (itr == nil) throw(index_out_of_bound());				
- 
+				else pos--;
+				return temp;
+			}
+			/**
+			 * TODO --iter
+			 */
+			iterator& operator--() {
+				if (pos == 0) {
+					itr = itr->prev;
+					pos = itr->getsize() - 1;
+				}
+				else pos--;
 				return *this;
 			}
-			value_type & operator*() const {
-				return *(itr->data);
+			/**
+			 * TODO *it
+			 */
+			T& operator*() const {
+				if (itr->prev == NULL || itr->next == NULL) throw(invalid_iterator());
+				return (*itr)[pos];
 			}
-			bool operator==(const iterator &rhs) const { return itr == rhs.itr; }
-			bool operator==(const const_iterator &rhs) const { return *this == rhs.itr; }
+			/**
+			 * TODO it->field
+			 */
+			T* operator->() const noexcept {
+				node *p;
+				itr->getPos(pos, p);
+				return p->data;
+			}
+			/**
+			 * a operator to check whether two iterators are same (pointing to the same memory).
+			 */
+			bool operator==(const iterator &rhs) const {
+				return (itr == rhs.itr && pos == rhs.pos);
+			}
+			bool operator==(const const_iterator &rhs) const {
+				return (itr == rhs.itr && pos == rhs.pos);
+			}
+			/**
+			 * some other operator for iterator.
+			 */
 			bool operator!=(const iterator &rhs) const {
 				return !(*this == rhs);
 			}
 			bool operator!=(const const_iterator &rhs) const {
 				return !(*this == rhs);
 			}
+	};
+	class const_iterator {
+		// it should has similar member method as iterator.
+		//  and it should be able to construct from an iterator.
+	private:
+		iterator itr;
  
-			value_type* operator->() const noexcept {
-				return itr->data;
-			}
-		};
-		class const_iterator {
-			friend iterator;
-		private:
-			iterator itr;
-		public:
-			const_iterator() {}
-			const_iterator(const const_iterator &other) {
-				itr = other.itr;
-			}
-			const_iterator(const iterator &other) {
-				itr = other;
-			}
-			
-			const_iterator operator++(int) {
-				const_iterator temp(*this);
-				++(*this);
-				return temp;
-			}
-			const_iterator & operator++() {
-				itr++;
-				return *this;
-			}
-			const_iterator operator--(int) {
-				const_iterator temp(*this);
-				--(*this);
-				return temp;
-			}
-			const_iterator & operator--() {
-				--itr;
-				return *this;
-			}
-			value_type & operator*() const {
-				return *(itr.itr->data);
-			}
-			bool operator==(const iterator &rhs) const { return itr == rhs; }
-			bool operator==(const const_iterator &rhs) const { return itr == rhs.itr; }
-			bool operator!=(const iterator &rhs) const {
-				return !(itr == rhs);
-			}
-			bool operator!=(const const_iterator &rhs) const {
-				return !(*this == rhs);
-			}
- 
-			value_type* operator->() const noexcept {
-				return itr.itr->data;
-			}
-		};
+	public:
+		const_iterator() {}
+		const_iterator(const const_iterator &other) {
+			itr = other.itr;
+		}
+		const_iterator(const iterator &other) {
+			itr = other;
+		}
+		const_iterator(Node *_itr, size_t _pos, block *_me) {
+			itr = iterator(_itr, _pos, _me);
+		}
+		const_iterator operator+(const int &n) const {
+			const_iterator temp(*this);
+			temp.itr += n;
+			return temp;
+		}
+		const_iterator operator-(const int &n) const {
+			const_iterator temp(*this);
+			temp.itr -= n;
+			return temp;
+		}
+		int operator-(const const_iterator &rhs) const {
+			return (itr - rhs.itr);
+		}
+		const_iterator operator+=(const int &n) {
+			itr += n;
+			return *this;
+		}
+		const_iterator operator-=(const int &n) {
+			itr -= n;
+			return *this;
+		}
+		const_iterator operator++(int) {
+			const_iterator temp(*this);
+			++temp.itr;
+			return temp;
+		}
 		/**
-		 * TODO two constructors
+		 * TODO ++iter
 		 */
-		map() {
-			root = NULL;
-			nil = new Node();
-			nil->colour = BLACK;
-			nil->data = NULL;
-			curSize = 0;
-		}
-		map(const map &other) {
-			root = NULL;
-			nil = new Node();
-			nil->colour = BLACK;
-			nil->data = NULL;
-			curSize = 0;
- 
-			auto it = other.cbegin();
-			while (it != other.cend()) {
-				value_type temp = *it;
-				Node *t = NULL;
-				insert(temp, t);
-				++it;
-			}
-		}
-		/**
-		 * TODO assignment operator
-		*/
-		map & operator=(const map &other) {
-			if (this == &other) return *this;
-			if (root) clear(root);
-			root = NULL;
-			curSize = 0;
- 
-			auto it = other.cbegin();
-			while (it != other.cend()) {
-				value_type temp = *it;
-				Node *t = NULL;
-				insert(temp, t);
-				++it;
-			}
- 
+		const_iterator& operator++() {
+			++itr;
 			return *this;
 		}
 		/**
-		* TODO Destructors
-		*/
-		~map() {
-			clear();
-			delete nil;
-		}
-		T & at(const Key &key) {
-			Node *t = findNode(key);
-			if (t == nil) throw(index_out_of_bound());
-			return t->data->second;
-		}
-		const T & at(const Key &key) const {
-			Node *t = findNode(key);
-			if (t == nil) throw(index_out_of_bound());
-			return t->data->second;
-		}
-		T & operator[](const Key &key) {
-			Node *t = findNode(key);
-			if (t == nil) {
-				value_type p = pair<Key, T> (key, T());
-				insert(p, t);
-				return t->data->second;
-			}
-			else return at(key);
-		}
-		const T & operator[](const Key &key) const {
-			return at(key);
-		}
-		iterator begin() {
-			if (empty()) return end();
-			Node *it = root;
-			while (it->left != nil)
-				it = it->left;
-			return iterator(it, root, nil);
-		}
-		const_iterator cbegin() const {
-			if (empty()) return cend();
-			Node *it = root;
-			while (it->left != nil)
-				it = it->left;
-			iterator temp(it, root, nil);
-			return const_iterator(temp);
-		}
-		iterator end() {
-			return iterator(nil, root, nil);
-		}
-		const_iterator cend() const {
-			iterator temp(nil, root, nil);
-			return const_iterator(temp);
-		}
-		bool empty() const {
-			return curSize == 0;
-		}
-		size_t size() const {
-			return curSize;
-		}
-		void clear(Node *&t) {
-			if (t != nil) {
-				clear(t->left);
-				clear(t->right);
-				delete t;
-				t = NULL;
-				return;
-			}
-		}
- 
-		void clear() {
-			if (root) clear(root);
-			curSize = 0;
+		 * TODO iter--
+		 */
+		const_iterator operator--(int) {
+			const_iterator temp(*this);
+			--temp.itr;
+			return temp;
 		}
 		/**
-		 * insert an element.
-		 * return a pair, the first of the pair is
-		 *   the iterator to the new element (or the element that prevented the insertion),
-		 *   the second one is true if insert successfully, or false.
+		 * TODO --iter
 		 */
-		pair<iterator, bool> insert(const value_type &value) {
-			Node *t = NULL, *now = this->findNode(value.first);
-			if (now != nil) {
-				iterator temp(now, root, nil);
-				return pair<iterator, bool>(temp, false);
-			}
-			else {
-				insert(value, t);
-				iterator temp(t, root, nil);
-				return pair<iterator, bool>(temp, true);
-			}
-		}
- 
-		Node *successor(Node *now) {
-			if (now->right != nil) {
-				Node *t = now->right;
-				while (t->left != nil) t = t->left;
-				return t;
-			}
-			Node *t = now->father;
-			while (t != nil && now == t->right) {
-				now = t;
-				t = t->father;
-			}
-			return t;
-		}
- 
-		Node *former(Node *now) {
-			if (now->left != nil) {
-				Node *t = now->left;
-				while (t->right != nil) t = t->right;
-				return t;
-			}
-			Node *t = now->father;
-			while (t != nil && now == t->left) {
-				now = t;
-				t = t->father;
-			}
-			return t;
-		}
- 
-		void left_rotate(Node *now) {
-			Node *rchild = now->right;
-			now->right = rchild->left;
-			if (rchild->left != nil)
-				rchild->left->father = now;
- 
-			rchild->father = now->father;
-			if (now->father == nil) root = rchild;
-			else
-				if (now == now->father->left)
-					now->father->left = rchild;
-				else
-					now->father->right = rchild;
- 
-			rchild->left = now;
-			now->father = rchild;
-		}
- 
-		void right_rotate(Node *now) {
-			Node *lchild = now->left;
-			now->left = lchild->right;
-			if (lchild->right != nil)
-				lchild->right->father = now;
- 
-			lchild->father = now->father;
-			if (now->father == nil)	root = lchild;
-			else
-				if (now == now->father->left)
-					now->father->left = lchild;
-				else
-					now->father->right = lchild;
- 
-			lchild->right = now;
-			now->father = lchild;
-		}
- 
-		void insert_fixup(Node *now) {
-			while (now->father->colour == RED) { // while there is two consequent RED nodes
-				Node *uncle = NULL, *gfather = now->father->father;
-				// LL, LR
-				if (now->father == gfather->left) {
-					uncle = gfather->right;
-					if (uncle->colour == RED) {
-						now->father->colour = BLACK;
-						uncle->colour = BLACK;
-						gfather->colour = RED;
-						now = gfather;
-					}
-					else {
-						if (now == now->father->right) { //LL, LR
-							now = now->father;
-							left_rotate(now);
-						}
-						now->father->colour = BLACK;
-						gfather->colour = RED;
-						right_rotate(gfather);
-					}
-				}
-				else {
-					uncle = gfather->left;
-					if (uncle->colour == RED) {
-						now->father->colour = BLACK;
-						uncle->colour = BLACK;
-						gfather->colour = RED;
-						now = gfather;
-					}
-					else {
-						if (now == now->father->left) { //LR
-							now = now->father;
-							right_rotate(now);
-						}
-						now->father->colour = BLACK;
-						gfather->colour = RED;
-						left_rotate(gfather);
-					}
-				}
-			}
-			root->colour = BLACK;
-		}
- 
-		void insert(const value_type &value, Node *&t) {
-			if (curSize == 0) {
-				++curSize;
-				root = new Node(value, nil, nil, nil);
-				root->colour = BLACK;
-				root->next = successor(root);
-				root->prev = former(root);
-				t = root;
-				return;
-			}
- 
-			++curSize;
-			Node *y = nil, *x = root;
-			while (x != nil) {
-				y = x;
-				if (comparator(value.first, x->data->first)) x = x->left;
-				else x = x->right;
-			}
-			Node *z = new Node(value, y, nil, nil);
- 
-			if (y == nil) root = z;
-			else if (comparator(value.first, y->data->first)) y->left = z;
-			else y->right = z;
- 
-			Node *prev = former(z), *next = successor(z);
-			z->next = next;
-			z->prev = prev;
-			next->prev = z;
-			prev->next = z;
- 
-			insert_fixup(z);
-			t = z;
-		}
- 
-		void delete_fixup(Node *now) {
-			while (now != root && now->colour == BLACK) {
-				if (now == now->father->left) {
-					Node *sibling = now->father->right;
-					if (sibling->colour == RED) {
-						sibling->colour = BLACK;
-						now->father->colour = RED;
-						left_rotate(now->father);
-						sibling = now->father->right;
-					}
-					if (sibling->left->colour == BLACK && sibling->right->colour == BLACK) {
-						sibling->colour = RED;
-						now = now->father;
-					}
-					else {
-						if (sibling->right->colour == BLACK) {
-							sibling->left->colour = BLACK;
-							sibling->colour = RED;
-							right_rotate(sibling);
-							sibling = now->father->right;
-						}
-						sibling->colour = now->father->colour;
-						now->father->colour = BLACK;
-						sibling->right->colour = BLACK;
-						left_rotate(now->father);
-						now = root;
-					}
-				}
-				else {
-					Node *sibling = now->father->left;
-					if (sibling->colour == RED) {
-						sibling->colour = BLACK;
-						now->father->colour = RED;
-						right_rotate(now->father);
-						sibling = now->father->left;
-					}
-					if (sibling->left->colour == BLACK && sibling->right->colour == BLACK) {
-						sibling->colour = RED;
-						now = now->father;
-					}
-					else {
-						if (sibling->left->colour == BLACK) {
-							sibling->right->colour = BLACK;
-							sibling->colour = RED;
-							left_rotate(sibling);
-							sibling = now->father->left;
-						}
-						sibling->colour = now->father->colour;
-						now->father->colour = BLACK;
-						sibling->left->colour = BLACK;
-						right_rotate(now->father);
-						now = root;
-					}
-				}
-			}
-			now->colour = BLACK;
-		}
- 
-		void erasenode(Node *now) {
-			//find the Real deleted Node
-			Node *temp = NULL, *son_temp = NULL;
-			if (now->left == nil || now->right == nil) {
-				temp = now;
-				temp->next->prev = temp->prev;
-				temp->prev->next = temp->next;
-			}
-			else {
-				temp = successor(now);
- 
-				if (now == root) root = temp;
-				
-				if (now->father->left == now) now->father->left = temp;
-				else now->father->right = temp;
-				if (temp->father->left == temp) temp->father->left = now;
-				else temp->father->right = now;
- 
-				Node *t = temp->father;
-				temp->father = now->father;
-				now->father = t;
- 
-				t = now->left;
-				t->father = temp;
-				now->left = temp->left;
-				temp->left = t;
- 
-				t = now->right;
-				t->father = temp;
-				now->right = temp->right;
-				temp->right = t;
- 
-				temp->prev = now->prev;
-				now->prev->next = temp;
- 
-				colourT tempc = now->colour;
-				now->colour = temp->colour;
-				temp->colour = tempc;
- 
-				temp = now;
-			}
-			
-			if (temp->left != nil) son_temp = temp->left;
-			else son_temp = temp->right;
- 
-			son_temp->father = temp->father;
- 
-			if (temp->father == nil) root = son_temp;
-			else
-				if (temp == temp->father->left) temp->father->left = son_temp;
-				else temp->father->right = son_temp;
- 
-			delete temp->data;
-			temp->data = NULL;
- 
-			if (temp->colour == BLACK) delete_fixup(son_temp);
-			nil->colour = BLACK;
-			nil->left = nil->right = nil->prev = nil->next = nil->father = nil;
- 
-			delete temp;
- 
-		}
- 
- 
-		void erasenode(const Key &key) {
-			erasenode(findNode(key));
+		const_iterator& operator--() {
+			--itr;
+			return *this;
 		}
 		/**
-		 * erase the element at pos.
-		 *
-		 * throw if pos pointed to a bad element (pos == this->end() || pos points an element out of this)
+		 * TODO *it
 		 */
-		void erase(iterator pos) {
-			if (pos == end() || pos.root != root || pos.nil != nil) throw(index_out_of_bound());
-			Node *t = pos.itr;
-			erasenode(t);
-			--curSize;
+		const T& operator*() const {
+			return *itr;
 		}
 		/**
-		 * Returns the number of elements with key
-		 *   that compares equivalent to the specified argument,
-		 *   which is either 1 or 0
-		 *     since this container does not allow duplicates.
-		 * The default method of check the equivalence is !(a < b || b > a)
+		 * TODO it->field
 		 */
-		size_t count(const Key &key) const {
-			size_t i;
-			if (findNode(key) == nil) i = 0;
-			else i = 1;
-			return i;
+		T* operator->() const noexcept {
+			node *p;
+			size_t pos = itr.pos;
+			itr.itr->getPos(pos, p);
+			return p->data;
 		}
-		iterator find(const Key &key) {
-			Node *temp = findNode(key);
-			return iterator(temp, root, nil);
+		bool operator==(const iterator &rhs) const {
+			return (itr == rhs);
 		}
-		const_iterator find(const Key &key) const {
-			iterator temp(findNode(key), root, nil);
-			return const_iterator(temp);
+		bool operator==(const const_iterator &rhs) const {
+			return (itr == rhs.itr);
+		}
+		/**
+		 * some other operator for iterator.
+		 */
+		bool operator!=(const iterator &rhs) const {
+			return !(*this == rhs);
+		}
+		bool operator!=(const const_iterator &rhs) const {
+			return !(*this == rhs);
 		}
  
-		int compare(const Key &a, const Key &b) const {
-			return comparator(a, b) ? -1 : (comparator(b, a) ? 1 : 0);
-		}
-		Node *findNode(const Key &key) const {
-			if (empty()) return nil;
- 
-			Node *t = root;
- 
-			while (t != nil) {
-				if (compare(key, t->data->first) == 0) break;
- 
-				if (compare(key, t->data->first) < 0) t = t->left;
-				else t = t->right;
-			}
- 
-			return t;
-		}
 	};
+	/**
+	 * TODO Constructors
+	 */
+	deque() { blk = new block(); }
+	deque(const deque &other) {
+		blk = new block((*other.blk));
+	}
+	/**
+	 * TODO Deconstructor
+	 */
+	~deque() { if (blk) delete blk; }
+	/**
+	 * TODO assignment operator
+	 */
+	deque &operator=(const deque &other) {
+		if (this == &other) return *this;
+		delete blk;
+		blk = new block(*(other.blk));
+		return *this;
+	}
+	/**
+	 * access specified element with bounds checking
+	 * throw index_out_of_bound if out of bound.
+	 */
+	T & at(const size_t &pos) {
+		return blk->get(pos);
+	}
+	const T & at(const size_t &pos) const {
+		return blk->get(pos);
+	}
+	T & operator[](const size_t &pos) {
+		return blk->get(pos);
+	}
+	const T & operator[](const size_t &pos) const {
+		return blk->get(pos);
+	}
+	/**
+	 * access the first element
+	 * throw container_is_empty when the container is empty.
+	 */
+	const T & front() const {
+		if (blk->empty()) throw(container_is_empty());
+		return blk->get(0);
+	}
+	/**
+	 * access the last element
+	 * throw container_is_empty when the container is empty.
+	 */
+	const T & back() const {
+		if (blk->empty()) throw(container_is_empty());
+		return blk->get(blk->size() - 1);
+	}
+	/**
+	 * returns an iterator to the beginning.
+	 */
+	iterator begin() {
+		return iterator(blk->head->next, 0, blk);
+	}
+	const_iterator cbegin() const {
+		return const_iterator(blk->head->next, 0, blk);
+	}
+	/**
+	 * returns an iterator to the end.
+	 */
+	iterator end() {
+		if (blk->len != 0) return iterator(blk->tail, 0, blk);
+		else return iterator(blk->head->next, 0, blk);
+	}
+	const_iterator cend() const {
+		if (blk->len != 0) return const_iterator(blk->tail, 0, blk);
+		else return const_iterator(blk->head->next, 0, blk);
+	}
+	/**
+	 * checks whether the container is empty.
+	 */
+	bool empty() const {
+		return blk->empty();
+	}
+	/**
+	 * returns the number of elements
+	 */
+	size_t size() const {
+		return blk->size();
+	}
+	/**
+	 * clears the contents
+	 */
+	void clear() {
+		blk->clear();
+	}
+	/**
+	 * inserts elements at the specified locat on in the container.
+	 * inserts value before pos
+	 * returns an iterator pointing to the inserted value
+	 *     throw if the iterator is invalid or it point to a wrong place.
+	 */
+	iterator insert(iterator pos, const T &value) {
+		Node *p = pos.itr;
+		size_t t = pos.pos;
+		if (blk != pos.me || p == blk->head || (p == blk->tail && t != 0) || t > p->size || t < 0) throw(invalid_iterator());
+ 
+		if (t == 0 && p == blk->tail) {
+			blk->push_back(value);
+			p = blk->tail->prev;
+			t = blk->tail->prev->size - 1;
+			return iterator(p, t, blk);
+		}//push_back
+ 
+		p->split(t);
+		p->push_back(value);
+		++blk->len;
+		p->next->merge();
+ 
+		t = p->size - 1;
+		p->merge();
+ 
+		return iterator(p, t, blk);
+	}
+	/**
+	 * removes specified element at pos.
+	 * removes the element at pos.
+	 * returns an iterator pointing to the following element, if pos pointing to the last element, end() will be returned.
+	 * throw if the container is empty, the iterator is invalid or it points to a wrong place.
+	 */
+	iterator erase(iterator pos) {
+		Node *p = pos.itr;
+		size_t t = pos.pos;
+		if (blk->len == 0 || t < 0 || t >= p->size) throw(invalid_iterator());
+		if (t == p->getsize() - 1) {
+			p->erase(t);
+			Node *q = p->next;
+			p->prev->merge();
+			p = q;
+			t = 0;
+		}
+		else {
+			p->erase(t);
+			if (p->prev->mergeable()) {
+				Node *q = p->prev;
+				t = q->size + t;
+				p->prev->merge();
+				p = q;
+			}
+		}
+		--blk->len;
+		return iterator(p, t, blk);
+	}
+	/**
+	 * adds an element to the end
+	 */
+	void push_back(const T &value) {
+		blk->push_back(value);
+	}
+	/**
+	 * removes the last element
+	 *     throw when the container is empty.
+	 */
+	void pop_back() {
+		if (empty()) throw(container_is_empty());
+		blk->pop_back();
+		if (blk->tail->prev->size == 0) {
+			Node *p = blk->tail->prev;
+			blk->tail->prev = p->prev;
+			p->prev->next = blk->tail;
+			delete p;
+		}
+	}
+	/**
+	 * inserts an element to the beginning.
+	 */
+	void push_front(const T &value) {
+		blk->push_front(value);
+	}
+	/**
+	 * removes the first element.
+	 *     throw when the container is empty.
+	 */
+	void pop_front() {
+		if (empty()) throw(container_is_empty());
+		blk->pop_front();
+		blk->head->next->merge();
+	}
+};
  
 }
  
